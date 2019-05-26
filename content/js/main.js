@@ -102,9 +102,9 @@ class Main2DBox {
     }
 
     init() {
-        this.box = new THREE.Mesh(new THREE.BoxGeometry(300, 200, 10), new THREE.MeshPhongMaterial({
+        this.box = new THREE.Mesh(new THREE.BoxGeometry(320, 220, 10), new THREE.MeshPhongMaterial({
             color: 0xff00ff,
-            opacity: 0.5,
+            opacity: 0,
             transparent: true
         }));
         this.game.environment.scene.add(this.box);
@@ -166,12 +166,8 @@ class Scene {
         this.rootObject = new THREE.Object3D();
     }
 
-    show() { 
-        this.rootObject.visible = true; 
-    }
-
-    hide() { 
-        this.rootObject.visible = false; 
+    init() { 
+        this.rootObject = new THREE.Object3D();
     }
 
     frame() { }
@@ -180,7 +176,77 @@ class Scene {
 
     mouseUp() { }
 
-    init() { }
+    keyDown(keyInfo) { }
+
+    keyUp(keyInfo) { }
+}
+
+class SimpleButton {
+    constructor(game, x, y, w, h, text, colorNormal, colorHover, colorPressed, clickCallback) {
+        this.game = game;
+
+        this.raycaster = new THREE.Raycaster();
+
+        this.normalMaterial = new THREE.MeshPhongMaterial({
+            color: colorNormal,
+        });
+        this.hoverMaterial = new THREE.MeshPhongMaterial({
+            color: colorHover,
+        });
+        this.pressedMaterial = new THREE.MeshPhongMaterial({
+            color: colorPressed,
+        });
+        this.baseObject = new THREE.Mesh(new THREE.BoxGeometry(w, h, 20), this.normalMaterial);
+        this.baseObject.position.x = x + w / 2;
+        this.baseObject.position.y = y + h / 2;
+
+        this.clickCallback = clickCallback;
+
+        this.isPressed = false;
+    }
+
+    addToScene(rootObject) {
+        rootObject.add(this.baseObject);
+    }
+
+    inButton() {
+        this.raycaster.setFromCamera(this.game.environment.mouse, this.game.environment.camera);
+        let intersects = this.raycaster.intersectObjects([this.baseObject], true);
+        return intersects.length > 0;
+    }
+
+    frame() {
+        if (this.isPressed) {
+            this.baseObject.position.z = -2;
+            this.baseObject.scale.z = 0.8;
+            this.baseObject.material = this.pressedMaterial;
+        } else {
+            this.baseObject.position.z = 0;
+            this.baseObject.scale.z = 1;
+            this.baseObject.material = this.inButton() ? this.hoverMaterial : this.normalMaterial;
+        }
+    }
+
+    mouseDown() {
+        if (this.inButton()) {
+            this.isPressed = true;
+        }
+    }
+
+    mouseUp() {
+        this.isPressed = false;
+        if (this.inButton()) {
+            if (this.clickCallback == undefined)
+                return;
+            this.clickCallback();
+        }
+    }
+}
+
+class SettingsScene extends Scene {
+    constructor(game) {
+        super(game);
+    }
 }
 
 class MainMenuScene extends Scene {
@@ -188,26 +254,250 @@ class MainMenuScene extends Scene {
         super(game);
     }
 
+    init() {
+        super.init();
+        let game = this.game;
+
+        this.playButton = new SimpleButton(this.game, 150 - 100, -10, 100, 20, "Play", 0x06b8af, 0x2af7ed, 0x035450, function() {
+            game.sceneManager.setScene("game");
+        });
+        this.playButton.addToScene(this.rootObject);
+        this.settingsButton = new SimpleButton(this.game, 150 - 100, -35, 100, 20, "Settings", 0x06b8af, 0x2af7ed, 0x035450, function() {
+            game.sceneManager.setScene("settings");
+        });
+        this.settingsButton.addToScene(this.rootObject);
+    }
+
+    frame() {
+        this.playButton.frame();
+        this.settingsButton.frame();
+    }
+
     mouseDown() {
-        let newObject = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 5), new THREE.MeshPhongMaterial({
-            color: 0x00ff00,
-        }));
-        newObject.position.set(this.game.environment.main2dbox.mousePoint.x, this.game.environment.main2dbox.mousePoint.y, this.game.environment.main2dbox.mousePoint.z);
-        this.rootObject.add(newObject);
+        this.playButton.mouseDown();
+        this.settingsButton.mouseDown();
     }
 
     mouseUp() {
-        let newObject = new THREE.Mesh(new THREE.BoxGeometry(5, 5, 5), new THREE.MeshPhongMaterial({
-            color: 0xff0000,
-        }));
-        newObject.position.set(this.game.environment.main2dbox.mousePoint.x, this.game.environment.main2dbox.mousePoint.y, this.game.environment.main2dbox.mousePoint.z);
-        this.rootObject.add(newObject);
+        this.playButton.mouseUp();
+        this.settingsButton.mouseUp();
     }
+}
+
+function getSizeByBB(object) {
+    const boundingBox = new THREE.Box3();
+    boundingBox.setFromObject(object);
+    const size = new THREE.Vector3();
+    boundingBox.getSize(size);
+    return Math.max(size.x, size.y) / 2 * 1.41;
 }
 
 class GameScene extends Scene {
     constructor(game) {
         super(game);
+    }
+
+    init() { 
+        this.meshes = [];
+
+        this.ships = [];
+        this.shipGroup = new THREE.Object3D();
+        for (let i = 0; i < 2; i++) {
+            this.ships.push(this.getShip(i));
+            this.shipGroup.add(this.ships[i]);
+            this.meshes.push({
+                x: this.ships[i].position.x,
+                y: this.ships[i].position.y,
+                r: getSizeByBB(this.ships[i])
+            });
+        }
+        this.rootObject.add(this.shipGroup);
+
+        this.planets = [];
+        this.planetGroup = new THREE.Object3D(); 
+        for (let i = 0; i < 20; i++) {
+            this.planets.push(this.getPlanet(i));
+            this.planetGroup.add(this.planets[i]);
+            this.meshes.push({
+                x: this.planets[i].position.x,
+                y: this.planets[i].position.y,
+                r: getSizeByBB(this.planets[i])
+            });
+        }
+        this.rootObject.add(this.planetGroup);
+
+        this.bulletTraceGroup = new THREE.Object3D();        
+        this.bulletTraces = [];
+        for (let i = 0; i < 5; i++) {
+            this.bulletTraces.push(this.getBulletTrace(i));
+            this.bulletTraceGroup.add(this.bulletTraces[i]);
+        }
+        this.rootObject.add(this.bulletTraceGroup);
+
+        this.bullet = this.getBullet();
+        this.rootObject.add(this.bullet);
+
+        this.initGame();
+    }
+
+    getUnMeshedPosition(object) {
+        let size = getSizeByBB(object);
+        while (true) {
+            let x = (Math.random() - 0.5) * 300;
+            let y = (Math.random() - 0.5) * 200;
+            let meshesCount = this.meshes.length;
+            let failed = false;
+            for (let i = 0; i < meshesCount; i++) {
+                let distance = ((x - this.meshes[i].x) * (x - this.meshes[i].x) + (y - this.meshes[i].y) * (y - this.meshes[i].y)) - (this.meshes[i].r * this.meshes[i].r) - (size * size);
+                if (distance < 0) {
+                    failed = true;
+                    break;
+                }
+            }
+            if (!failed)
+                return {
+                    x: x,
+                    y: y
+                };
+        }
+    }
+
+    getShip(id) {
+        let shipGeometry = new THREE.BoxGeometry(10, 10, 10);
+        let shipMaterial = new THREE.MeshPhongMaterial({
+            color: 0xFFFFFF
+        });
+        let shipMesh = new THREE.Mesh(shipGeometry, shipMaterial);
+        let newPosition = this.getUnMeshedPosition(shipMesh);
+        shipMesh.position.x = newPosition.x;
+        shipMesh.position.y = newPosition.y;
+        shipMesh.visible = false;
+        return shipMesh;
+    }
+
+    getPlanet(id) {
+        let radius = Math.random() * 7 + 8;
+        let planetGeometry = new THREE.SphereGeometry(radius, 20, 20);
+        let planetMaterial = new THREE.MeshPhongMaterial({
+            color: 0x00FF00
+        });
+        let planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+        let newPosition = this.getUnMeshedPosition(planetMesh);
+        planetMesh.radius = radius;
+        planetMesh.position.x = newPosition.x;
+        planetMesh.position.y = newPosition.y;
+        planetMesh.visible = false;
+        return planetMesh;
+    }
+
+    getBulletTrace(id) {
+        return new THREE.Object3D();
+    }
+
+    getBullet() {
+        let bulletGeometry = new THREE.SphereGeometry(2.5, 10, 10);
+        let bulletMaterial = new THREE.MeshPhongMaterial({
+            color: 0xFFFF00
+        });
+        let bulletMesh = new THREE.Mesh(bulletGeometry, bulletMaterial);
+        bulletMesh.visible = false;
+        bulletMesh.velocity = new THREE.Vector2();
+        return bulletMesh;
+    }
+
+    initGame() {
+        this.player = 0;
+        this.state = 0;
+
+        this.ships.forEach(function(ship) {
+            ship.visible = true;
+        });
+
+        this.planets.forEach(function(ship) {
+            ship.visible = true;
+        });
+    }
+
+    mouseDown() {
+        if (this.state == 0) {
+            this.state = 1;
+            this.bullet.position.x = this.ships[this.player].position.x;
+            this.bullet.position.y = this.ships[this.player].position.y;
+            this.bullet.velocity.x = this.game.environment.main2dbox.mousePoint.x - this.bullet.position.x;
+            this.bullet.velocity.y = this.game.environment.main2dbox.mousePoint.y - this.bullet.position.y;
+            this.bullet.visible = true;
+        }
+    }
+
+    explode(x, y) {
+
+    }
+
+    frame() {
+        let t = this.game.delta / 1000;
+        if (this.state == 1) {
+            this.bullet.position.x += this.bullet.velocity.x * t;
+            this.bullet.position.y += this.bullet.velocity.y * t;
+
+            // bullet physics
+
+            if (Math.abs(this.bullet.position.x) > 160 || Math.abs(this.bullet.position.y) > 110) {
+                this.bullet.visible = false;
+                this.explode(this.bullet.position.x, this.bullet.position.y);
+                this.state = 0;
+                this.player = 1 - this.player;
+                return;
+            }
+
+            let planetCollision = false;
+
+            {
+                let bulletX = this.bullet.position.x;
+                let bulletY = this.bullet.position.y;
+
+                let planetCount = this.planets.length;
+                for (let i = 0; i < planetCount; i++) {
+                    let distance = 
+                        ((bulletX - this.planets[i].position.x) * (bulletX - this.planets[i].position.x) + (bulletY - this.planets[i].position.y) * (bulletY - this.planets[i].position.y)) - 
+                        (this.planets[i].radius * this.planets[i].radius);
+                    if (distance < 0) {
+                        planetCollision = true;
+                        break;
+                    }
+                }
+            }
+
+            if (planetCollision) {
+                this.bullet.visible = false;
+                this.explode(this.bullet.position.x, this.bullet.position.y);
+                this.state = 0;
+                this.player = 1 - this.player;
+                return;
+            }
+
+            let opponentCollision = false;
+            let opponentId = (1 - this.player);
+
+            {
+                let bulletX = this.bullet.position.x;
+                let bulletY = this.bullet.position.y;
+
+                let distance = 
+                    ((bulletX - this.ships[opponentId].position.x) * (bulletX - this.ships[opponentId].position.x) + (bulletY - this.ships[opponentId].position.y) * (bulletY - this.ships[opponentId].position.y)) - 
+                    (7 * 7);
+                if (distance < 0) 
+                    opponentCollision = true;
+            }
+
+            if (opponentCollision) {
+                console.info("shot " + (1 - this.player));
+                this.bullet.visible = false;
+                this.explode(this.bullet.position.x, this.bullet.position.y);
+                this.state = 0;
+                this.player = 1 - this.player;
+                return;
+            }
+        }
     }
 }
 
@@ -221,19 +511,18 @@ class SceneManager {
     addScene(id, scene) {
         if (this.scenes[id] != undefined) 
             throw "scene " + id + " already exists";
-        scene.init();
-        scene.hide();
-        this.game.environment.scene.add(scene.rootObject);
         this.scenes[id] = scene;
     }
 
     setScene(id) {
         if (this.scenes[id] == undefined) 
             throw "scene " + id + " does not exist";
-        for (var sceneId in this.scenes)
-            this.scenes[sceneId].hide();
-        this.scenes[id].show();
+        if (this.currentSceneId != undefined) {
+            this.game.environment.scene.remove(this.scenes[this.currentSceneId].rootObject);            
+        }
         this.currentSceneId = id;
+        this.scenes[this.currentSceneId].init();
+        this.game.environment.scene.add(this.scenes[this.currentSceneId].rootObject);      
     }
 
     getCurrentScene() {
@@ -243,11 +532,14 @@ class SceneManager {
 
 class Game {
     constructor() {
+        this.delta = 0;
+        this.previous = undefined;
         this.environment = new Environment(this);
         this.environment.init(document.body);
 
         this.sceneManager = new SceneManager(this);
         this.sceneManager.addScene("main-menu", new MainMenuScene(this));
+        this.sceneManager.addScene("settings", new SettingsScene(this));
         this.sceneManager.addScene("game", new GameScene(this));
         this.sceneManager.setScene("main-menu");
     }
@@ -264,6 +556,12 @@ class Game {
         window.addEventListener('mouseup', function() {
             game.mouseUp();
         }, false);
+        window.addEventListener('keydown', function(event) {
+            game.keyDown(event);
+        }, false);
+        window.addEventListener('keyup', function(event) {
+            game.keyUp(event);
+        }, false);
         this.updateWindow();
     }
 
@@ -275,13 +573,22 @@ class Game {
         this.sceneManager.getCurrentScene().mouseUp();
     }
 
+    keyDown(keyInfo) {
+        this.sceneManager.getCurrentScene().keyDown(keyInfo);
+    }
+
+    keyUp(keyInfo) {
+        this.sceneManager.getCurrentScene().keyUp(keyInfo);
+    }
+
     updateWindow() {
         this.environment.camera.aspect = window.innerWidth / window.innerHeight;
 
         const fitCameraToObject = function(camera, object) {
             const boundingBox = new THREE.Box3();
             boundingBox.setFromObject(object);
-            const size = boundingBox.getSize();
+            const size = new THREE.Vector3();
+            boundingBox.getSize(size);
             const neededHeight = Math.max(size.y + 20, (size.x + 20) / camera.aspect);
             const vFOV = THREE.Math.degToRad(camera.fov);
             camera.position.z = neededHeight / 2 / Math.tan(vFOV / 2);
@@ -294,12 +601,15 @@ class Game {
     }
 
     getFrameRenderFunction(game) {
-        return function() {
-            game.frame();
+        return function(timestamp) {
+            game.frame(timestamp);
         }
     }
 
-    frame() {
+    frame(timestamp) {
+        if (this.previous != undefined)
+            this.delta = timestamp - this.previous;
+        this.previous = timestamp;
         this.environment.frame();
         this.sceneManager.getCurrentScene().frame();
         this.environment.renderer.render(this.environment.scene, this.environment.camera);
